@@ -30,9 +30,9 @@ class NegDetectionProbeDataset(datasets.GeneratorBasedBuilder):
         )
 
 
-    def __init__(self, add_sep=True, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(kwargs)
-        self.add_sep = add_sep
+        self.add_sep = bool(kwargs.get("add_sep"))
         self.config_name = kwargs.get("config_name")
 
     def _split_generators(self, dl_manager):
