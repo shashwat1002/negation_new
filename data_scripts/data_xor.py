@@ -1,6 +1,10 @@
 import datasets
 import json
+import difflib
+import string
+import random
 
+SEED = 0
 TRAIN_LAMA = "../initial_experiments/lama_train.txt"
 TEST_LAMA = "../initial_experiments/lama_test.txt"
 DEV_LAMA = "../initial_experiments/lama_dev.txt"
@@ -9,7 +13,32 @@ sep_token = "</s>"
 cls_token = "<s>"
 pad_token = "<pad>"
 
-def transform_lama_to_experiment_format(dictionary, control_task=0, add_sep=True):
+def random_char_control(s1, s2, shuffle):
+    '''
+    Pass shuffle as a 26 length string where 
+    shuffle[i] = transformation for 'a' + i (in lowercase)
+    '''
+
+    ret = ""
+    for i,s in enumerate(difflib.ndiff(s1, s2)):
+        if s[0]==' ': 
+            ret += s[-1]
+        elif s[0]=='-':
+            # raise ValueError(f'{s1}-> {s2} involves deletions and random_char_control cant handle that')
+            continue
+        elif s[0]=='+':
+            c = s[-1]
+            # print(s[0], s[-1], i)
+            if c.isalpha():
+                if c.isupper(): #Assuming: we need to preserve upper-case letters
+                    c = shuffle[string.ascii_uppercase.index(c)]
+                    c = c.upper()
+                elif c.islower():
+                    c = shuffle[string.ascii_lowercase.index(c)]
+            ret += c
+    return s1, ret
+
+def transform_lama_to_experiment_format(dictionary, control_task=0, add_sep=False):
 
     """
     control_task: takes one of three integers
@@ -45,9 +74,9 @@ def transform_lama_to_experiment_format(dictionary, control_task=0, add_sep=True
         # replace negation particles with random gibberish
         s = string.ascii_lowercase[:26]
         l = list(s)
-        random.Random(shuffler.SEED).shuffle(l)
+        random.Random(SEED).shuffle(l)
         cipher = ''.join(l)
-        sentences = list(shuffler.random_char_control(sentence1, sentence2, cipher))
+        sentences = list(random_char_control(sentence1, sentence2, cipher))
 
 
     combinations = []
@@ -60,7 +89,7 @@ def transform_lama_to_experiment_format(dictionary, control_task=0, add_sep=True
                 sentence = sentences[i] + f" " + sentences[j]
             outcome = -1
 
-            if control_task == 0:
+            if control_task == 0 or control_task == 1:
                 if i == j:
                     outcome = 0
                 else:
@@ -101,6 +130,14 @@ class NegXORDataset(datasets.GeneratorBasedBuilder):
     def __init__(self, **kwargs):
         super().__init__(kwargs)
         self.add_sep = bool(kwargs.get("add_sep"))
+
+        # 0: XOR task
+        # 1: all "not" in the above task changed to consistent random gibberish
+        if kwargs.get("task_num") is None:
+            self.task_num = 0
+        else:
+            self.task_num = int(kwargs.get("task_num"))
+
         self.config_name = kwargs.get("config_name")
 
     def _split_generators(self, dl_manager):
@@ -121,7 +158,7 @@ class NegXORDataset(datasets.GeneratorBasedBuilder):
                 except json.decoder.JSONDecodeError:
                     pass
 
-                quintuple = transform_lama_to_experiment_format(dict_rep, add_sep=self.add_sep)
+                quintuple = transform_lama_to_experiment_format(dict_rep, add_sep=self.add_sep, control_task=self.task_num)
 
                 for i, pair in enumerate(quintuple):
                     id_ += 1
