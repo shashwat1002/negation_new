@@ -76,8 +76,9 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
             features=datasets.Features(
                 {
                     "id_": datasets.Value("int32"),
-                    "content": datasets.Value("string"),
-                    "label": datasets.Value("int32")
+                    "subject": datasets.Value("string"),
+                    "label": datasets.Value("int32"),
+                    "masked_non_negated": datasets.Value("string"),
                 }
             )
         )
@@ -87,7 +88,7 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
         super().__init__(kwargs)
         self.config_name = kwargs.get("config_name")
 
-        self.model = RobertaForMaskedLM.from_pretrained('roberta-base').eval()
+        self.model = RobertaForMaskedLM.from_pretrained('roberta-base').to(DEVICE).eval()
         self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
 
 
@@ -119,11 +120,13 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
                     dict_rep["masked_negations"][0].replace("[MASK]", mask_replace).replace(" .", "."),
                 )
 
-                content = dict_rep["sub_label"]
+                subject = dict_rep["sub_label"]
+                masked_non_negated = pair_of_pair[0]
                 label = compare_n_sentences(self.model, self.tokenizer, pair_of_pair)
 
                 yield (id_), {
-                    "content": content,
+                    "subject": subject,
+                    "masked_non_negated": masked_non_negated,
                     "label": label,
                     "id_": id_
                 }
