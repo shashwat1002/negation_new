@@ -1,9 +1,40 @@
 import datasets
 import json
+import string
+import difflib
+import random
+
+SEED = 42
 
 TRAIN_LAMA = "../initial_experiments/lama_train.txt"
 TEST_LAMA = "../initial_experiments/lama_test.txt"
 DEV_LAMA = "../initial_experiments/lama_dev.txt"
+
+
+def random_char_control(s1, s2, shuffle):
+    '''
+    Pass shuffle as a 26 length string where 
+    shuffle[i] = transformation for 'a' + i (in lowercase)
+    '''
+
+    ret = ""
+    for i,s in enumerate(difflib.ndiff(s1, s2)):
+        if s[0]==' ': 
+            ret += s[-1]
+        elif s[0]=='-':
+            # raise ValueError(f'{s1}-> {s2} involves deletions and random_char_control cant handle that')
+            continue
+        elif s[0]=='+':
+            c = s[-1]
+            # print(s[0], s[-1], i)
+            if c.isalpha():
+                if c.isupper(): #Assuming: we need to preserve upper-case letters
+                    c = shuffle[string.ascii_uppercase.index(c)]
+                    c = c.upper()
+                elif c.islower():
+                    c = shuffle[string.ascii_lowercase.index(c)]
+            ret += c
+    return s1, ret
 
 
 class NegDetectionProbeDataset(datasets.BuilderConfig):
@@ -32,8 +63,12 @@ class NegDetectionProbeDataset(datasets.GeneratorBasedBuilder):
 
     def __init__(self, **kwargs):
         super().__init__(kwargs)
-        self.add_sep = bool(kwargs.get("add_sep"))
         self.config_name = kwargs.get("config_name")
+        self.control = 0
+        try:
+            self.control = kwargs.get("control")
+        except KeyError:
+            pass
 
     def _split_generators(self, dl_manager):
 
@@ -57,6 +92,17 @@ class NegDetectionProbeDataset(datasets.GeneratorBasedBuilder):
                     (dict_rep["masked_sentences"][0].replace("[MASK]", mask_replace).replace(" .", "."), 0,),
                     (dict_rep["masked_negations"][0].replace("[MASK]", mask_replace).replace(" .", "."), 1,),
                 )
+
+                if self.control == 1:
+                    # replace negation particles with random gibberish
+                    s = string.ascii_lowercase[:26]
+                    l = list(s)
+                    random.Random(SEED).shuffle(l)
+                    cipher = ''.join(l)
+                    sentences = list(random_char_control(pair_of_pair[0][0], pair_of_pair[1][0], cipher))
+
+                    pair_of_pair = ((sentences[0], 0), (sentences[1], 1))
+
 
                 for i, pair in enumerate(pair_of_pair):
                     id_ += 1

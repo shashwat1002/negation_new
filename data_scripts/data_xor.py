@@ -4,7 +4,7 @@ import difflib
 import string
 import random
 
-SEED = 0
+SEED = 42
 TRAIN_LAMA = "../initial_experiments/lama_train.txt"
 TEST_LAMA = "../initial_experiments/lama_test.txt"
 DEV_LAMA = "../initial_experiments/lama_dev.txt"
