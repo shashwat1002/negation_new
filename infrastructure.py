@@ -165,7 +165,8 @@ def linear_probe_experiment(train_input, test_input, train_labels, test_labels):
 
 def mlp_probe_experiment(train_input, test_input, train_labels, test_labels):
     # initialize an mlp probe and run probe experiment
-    mlp = MLPClassifier(random_state=1, max_iter=1000, verbose=True, hidden_layer_sizes=(300,))
+    mlp = MLPClassifier(random_state=1, max_iter=1000, verbose=True, hidden_layer_sizes=(300, 100))
+    print("here")
     return probe_experiment(train_input, test_input, train_labels, test_labels, mlp)
 
 
@@ -176,6 +177,13 @@ def generate_classification_report_all_layers(input_all_layers, labels, models):
     """
     labels = labels.detach().cpu().numpy()
     preds_for_all_layers = [models[i].predict(input_for_layer.detach().cpu().numpy()) for i, input_for_layer in enumerate(input_all_layers)]
-    classification_reports = [classification_report(y_true=labels, y_pred=pred) for pred in preds_for_all_layers]
+    classification_reports = [classification_report(y_true=labels, y_pred=pred, output_dict=True) for pred in preds_for_all_layers]
     return classification_reports
 
+
+
+def collect_all_precisions_recalls(classification_report_list):
+    for_class_zero = [report['0'] for report in classification_report_list]
+    for_class_one = [report['1'] for report in classification_report_list]
+
+    return for_class_zero, for_class_one
