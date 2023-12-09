@@ -1,4 +1,4 @@
-from transformers import AutoModel, AutoTokenizer, AutoConfig
+from transformers import AutoModel, AutoTokenizer, AutoConfig, BertTokenizer, AutoModelForMaskedLM
 from torch.nn import Module
 from torch.utils.data import DataLoader
 from icecream import ic
@@ -7,7 +7,12 @@ import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import classification_report
+from pytorch_lightning import LightningModule
+import torchmetrics
+import os
 
+
+BERTNOT_CHECKPOINT_PATH = "checkpoint_bertnot/"
 
 class EncoderWrapper(Module):
 
@@ -18,14 +23,30 @@ class EncoderWrapper(Module):
     def __init__(self, model_name="roberta-base", device="cpu"):
         super().__init__()
 
-        self.device = device
-        self.model_name = model_name
-        self.model_obj = AutoModel.from_pretrained(
-            model_name).eval()
-        self.model_obj.eval()
-        self.tokenizer_obj = AutoTokenizer.from_pretrained(model_name)
-        self.config_obj = AutoConfig.from_pretrained(model_name)
-        self.to(device)
+        if model_name != "bertnot":
+            self.device = device
+            self.model_name = model_name
+            self.model_obj = AutoModel.from_pretrained(
+                model_name).eval()
+            self.model_obj.eval()
+            self.tokenizer_obj = AutoTokenizer.from_pretrained(model_name)
+            self.config_obj = AutoConfig.from_pretrained(model_name)
+            self.to(device)
+        else:
+            # if the model to be loaded is BERTNOT
+            # then we load BERTNOT custom model from path, we initialize a BERT tokenizer from a vocab.txt
+            # and we initialize a BERT config from a config.json
+            self.device = device
+            self.model_name = model_name
+            model_path = os.path.join(BERTNOT_CHECKPOINT_PATH, "pytorch_model.bin")
+            config_path = os.path.join(BERTNOT_CHECKPOINT_PATH, "config.json")
+            vocab_path = os.path.join(BERTNOT_CHECKPOINT_PATH, "vocab.txt")
+            self.model_config = AutoConfig.from_pretrained(config_path)
+            self.model_lm = AutoModelForMaskedLM.from_pretrained(model_path, config=self.model_config).eval()
+            self.model_obj = self.model_lm.bert
+            self.model_obj.eval()
+            self.tokenizer_obj = BertTokenizer(vocab_file=vocab_path, do_lower_case=False, max_len=512)
+            self.to(device)
 
     def forward(self, input_text):
 
