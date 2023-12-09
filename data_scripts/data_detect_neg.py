@@ -3,6 +3,7 @@ import json
 import string
 import difflib
 import random
+import re
 
 SEED = 42
 
@@ -102,6 +103,19 @@ class NegDetectionProbeDataset(datasets.GeneratorBasedBuilder):
                     sentences = list(random_char_control(pair_of_pair[0][0], pair_of_pair[1][0], cipher))
 
                     pair_of_pair = ((sentences[0], 0), (sentences[1], 1))
+
+                replace_neg_with = "actually"
+                if self.control == 2:
+                    # replace negation with a specific word
+                    sentences = [pair_of_pair[0][0], pair_of_pair[1][0]]
+                    not_iter = re.finditer(r"\bnot\b", pair_of_pair[1][0])
+                    if not_iter is None:
+                        continue
+                    else:
+                        sentences[1] = re.sub(r"\bnot\b", replace_neg_with, sentences[1])
+
+                    pair_of_pair = ((sentences[0], 0), (sentences[1], 1))
+
 
 
                 for i, pair in enumerate(pair_of_pair):

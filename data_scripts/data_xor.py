@@ -3,6 +3,7 @@ import json
 import difflib
 import string
 import random
+import re
 
 SEED = 42
 TRAIN_LAMA = "../initial_experiments/lama_train.txt"
@@ -77,6 +78,15 @@ def transform_lama_to_experiment_format(dictionary, control_task=0, add_sep=Fals
         random.Random(SEED).shuffle(l)
         cipher = ''.join(l)
         sentences = list(random_char_control(sentence1, sentence2, cipher))
+
+    replace_neg_with = "actually"
+
+    if control_task == 2:
+        not_iter = re.finditer(r"\bnot\b", sentences[1])
+        if not_iter is None:
+            return None
+        else:
+            sentences[1] = re.sub(r"\bnot\b", replace_neg_with, sentences[1])
 
 
     combinations = []
@@ -159,6 +169,8 @@ class NegXORDataset(datasets.GeneratorBasedBuilder):
                     pass
 
                 quintuple = transform_lama_to_experiment_format(dict_rep, add_sep=self.add_sep, control_task=self.task_num)
+                if quintuple is None:
+                    continue
 
                 for i, pair in enumerate(quintuple):
                     id_ += 1

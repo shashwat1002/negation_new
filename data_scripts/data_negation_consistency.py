@@ -1,6 +1,7 @@
 import datasets
 import json
 from transformers import RobertaForMaskedLM, RobertaTokenizer
+from transformers import AutoModelWithLMHead, AutoTokenizer
 from icecream import ic
 import torch
 from torch.nn import Softmax
@@ -11,9 +12,29 @@ DEV_LAMA = "../initial_experiments/lama_dev.txt"
 
 DEVICE = "cpu"
 
+def exact_string_match(full_string, sub_string):
+    """
+    Takes the full_string, and the substring, and returns the indices of the substring in the full string
+    :param full_string: string
+    :param sub_string: string
+    """
+    start = full_string.find(sub_string)
+    end = start + len(sub_string)
+    return start, end
+
+def replace_substring_with_mask(full_string, sub_string, mask_token):
+    """
+    Takes the full_string, and the substring, and returns the full string with the substring replaced with the mask token
+    :param full_string: string
+    :param sub_string: string
+    :param mask_token: string
+    """
+    start, end = exact_string_match(full_string, sub_string)
+    return full_string[:start] + mask_token + full_string[end:]
+
 def send_mask_logits(model, tokenizer, sentence):
     inputs_tran = tokenizer(sentence, return_tensors="pt").to(DEVICE)
-
+    # print(inputs_tran)
 
 
     with torch.no_grad():
@@ -21,12 +42,12 @@ def send_mask_logits(model, tokenizer, sentence):
 
 
     mask_token_index = (inputs_tran.input_ids == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
-
+    # print(mask_token_index)
 
     return logits[:, mask_token_index, :]
 
 def top_k(k, logits_tensor):
-
+    # print(logits_tensor.size())
     sorted_logits, indices = torch.sort(logits_tensor, descending=True)
 
     return sorted_logits[:k], indices[:k]
@@ -49,7 +70,7 @@ def compare_n_sentences(model, tokenizer, sentence_list):
 
 
     pred_tokens = [tokenizer.convert_ids_to_tokens(indices.squeeze()) for indices in top_k_indices_list]
-
+    # print(top_k_indices_list)
     return not(top_k_indices_list[0].squeeze()[0] == top_k_indices_list[1].squeeze()[0])
 
     # return out_string
@@ -79,6 +100,7 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
                     "subject": datasets.Value("string"),
                     "label": datasets.Value("int32"),
                     "masked_non_negated": datasets.Value("string"),
+                    "subject_hidden": datasets.Value("string"),
                 }
             )
         )
@@ -87,9 +109,27 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
     def __init__(self, **kwargs):
         super().__init__(kwargs)
         self.config_name = kwargs.get("config_name")
+        self.model_name = kwargs.get("model_name")
+        self.mask_token = kwargs.get("mask_token")
 
-        self.model = RobertaForMaskedLM.from_pretrained('roberta-base').to(DEVICE).eval()
-        self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+        # print(self.model_name)
+
+        if kwargs.get("model_name") is None:
+            self.model_name = "roberta-base"
+
+        if self.mask_token is None:
+            if self.model_name == "roberta-base":
+                self.mask_token = "<mask>"
+            else:
+                self.mask_token = "[MASK]"
+
+
+        if kwargs.get("model") is None:
+            self.model = AutoModelWithLMHead.from_pretrained(self.model_name).to(DEVICE).eval()
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        else:
+            self.model = kwargs.get("model")
+            self.tokenizer = kwargs.get("tokenizer")
 
 
 
@@ -116,17 +156,20 @@ class NegationConsistency(datasets.GeneratorBasedBuilder):
                     pass
                 mask_replace = "<mask>"
                 pair_of_pair = (
-                    dict_rep["masked_sentences"][0].replace("[MASK]", mask_replace).replace(" .", "."),
-                    dict_rep["masked_negations"][0].replace("[MASK]", mask_replace).replace(" .", "."),
+                    dict_rep["masked_sentences"][0].replace("[MASK]", self.mask_token).replace(" .", "."),
+                    dict_rep["masked_negations"][0].replace("[MASK]", self.mask_token).replace(" .", "."),
                 )
 
                 subject = dict_rep["sub_label"]
                 masked_non_negated = pair_of_pair[0]
                 label = compare_n_sentences(self.model, self.tokenizer, pair_of_pair)
 
+                subject_hidden = replace_substring_with_mask(masked_non_negated, subject, self.mask_token)
+
                 yield (id_), {
                     "subject": subject,
                     "masked_non_negated": masked_non_negated,
+                    "subject_hidden": subject_hidden,
                     "label": label,
                     "id_": id_
                 }
