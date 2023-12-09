@@ -79,6 +79,96 @@ class EncoderWrapper(Module):
         return mean_pooled_all_layers
 
 
+class AcrossLayerfit(LightningModule):
+    """
+    Maintains a set of parameters to weight the representations of each encoder layer with
+    Takes the model as argument that is supposed to fit these
+    """
+
+    def __init__(self, num_layers=13, hidden_size=768, model=None, lr=0.01):
+        super().__init__()
+
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lr = lr
+        if model is None:
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(hidden_size, 300),
+                torch.nn.ReLU(),
+                torch.nn.Linear(300, 200),
+                torch.nn.ReLU(),
+                torch.nn.Linear(200, 1),
+                torch.nn.Sigmoid()
+            )
+        else:
+            self.model = model
+
+        # to weigh the representations from each layer
+        self.learnable_parameters = torch.nn.Parameter(torch.randn(self.num_layers))
+        self.softmax = torch.nn.Softmax(dim=0)
+        self.criterion = torch.nn.BCELoss()
+        self.accuracy_metric = torchmetrics.classification.BinaryAccuracy()
+
+    def forward(self, batch):
+        # assuming that batch is a list with representations from each layer
+        # batch_tensor = torch.stack(batch, dim=0)
+        # batch_tensor_view = batch_tensor.view(batch_tensor.size()[1], batch_tensor.size()[0], -1) # so that batch size is first dimension
+        scores = self.softmax(self.learnable_parameters) # scores from the parameters
+        weighted_sum = torch.matmul(scores, batch) # weighted sum
+
+        return self.model(weighted_sum)
+
+    def training_step(self, batch, batch_idx):
+        batch_inp, y = batch
+        y = y.float()
+        y_pred = self.forward(batch_inp).squeeze()
+        loss = self.criterion(input=y_pred, target=y)
+
+        log_dict = {
+            "train_loss": loss
+        }
+
+        self.log_dict(log_dict)
+
+        return loss
+
+    def validation_test_step(self, batch, batch_idx):
+        batch_inp, y = batch
+        y = y.float()
+        with torch.no_grad():
+            y_pred = self.forward(batch_inp).squeeze()
+        loss = self.criterion(input=y_pred, target=y)
+        accuracy = self.accuracy_metric(preds=y_pred, target=y)
+
+        return loss, accuracy
+    def validation_step(self, batch, batch_idx):
+        loss, accuracy = self.validation_test_step(batch, batch_idx)
+
+        log_dict = {
+            "validation_loss": loss,
+            "validation_accuracy": accuracy
+        }
+
+        self.log_dict(log_dict)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        loss, accuracy = self.validation_test_step(batch, batch_idx)
+
+        log_dict = {
+            "test_loss": loss,
+            "test_accuracy": accuracy
+        }
+
+        self.log_dict(log_dict)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(params=self.parameters(), lr=self.lr)
+
+
+
+
 def get_hidden_states_many_examples(model, data, n=100, layer=-1, batch_size=1, query_column="content"):
     """
     Takes a bunch of sequences and runs them through encoder to generate the mean-pooled hidden states.
